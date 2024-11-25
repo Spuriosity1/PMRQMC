@@ -42,3 +42,4 @@ Instructions for parallel computing with MPI (optional):
 3. Run the MPI application "PMRQMC_mpi.bin" using mpirun or any MPI-compatible job scheduler.
 
 -----------------------------------------------------------------------------------------------------------
+

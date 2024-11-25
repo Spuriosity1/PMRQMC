@@ -1,0 +1,36 @@
+#
+# This program is introduced in the paper:
+# Lev Barash, Arman Babakhani, Itay Hen, A quantum Monte Carlo algorithm for arbitrary spin-1/2 Hamiltonians, Physical Review Research 6, 013281 (2024).
+#
+# This program is licensed under a Creative Commons Attribution 4.0 International License:
+# http://creativecommons.org/licenses/by/4.0/
+#
+
+#
+# Below are the parameter values:
+#
+
+Tsteps = 1000000               # number of Monte-Carlo initial equilibration updates
+steps  = 10000000              # number of Monte-Carlo updates
+stepsPerMeasurement = 10       # number of Monte-Carlo updates per measurement
+beta    = 1.0                   # inverse temperature
+
+#
+# Below is the list of standard observables:
+#
+
+MEASURE_H = true                    # <H>             is measured when this line is not commented
+MEASURE_H2 = true                   # <H^2>           is measured when this line is not commented
+MEASURE_HDIAG = true                # <H_{diag}>      is measured when this line is not commented
+MEASURE_HDIAG2 = true               # <H_{diag}^2>    is measured when this line is not commented
+MEASURE_HOFFDIAG = true             # <H_{offdiag}>   is measured when this line is not commented
+MEASURE_HOFFDIAG2 = true            # <H_{offdiag}^2> is measured when this line is not commented
+MEASURE_Z_MAGNETIZATION = false      # Z-magnetization is measured when this line is not commented
+
+#
+# Below are the implementation parameters:
+#
+
+qmax = 1000                # upper bound for the maximal length of the sequence of permutation operators
+Nbins =  250                 # number of bins for the error estimation via binning analysis
+EXHAUSTIVE_CYCLE_SEARCH = true      #  set to false for a more restrictive cycle search
