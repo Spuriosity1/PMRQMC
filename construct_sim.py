@@ -6,115 +6,183 @@ import os
 
 
 tmp_dir = "tmp"
+script_dir = os.path.dirname(__file__)
 
 DATE = datetime.datetime.now().isoformat()
 
-parser = argparse.ArgumentParser()
-parser.add_argument("paramfile", type=str,
-                    help="a TOML file specifying the simulation parameters")
-parser.add_argument("hamfile", type=str,
-                    help="A text file specifying the Hamiltonian in Pauli-sum form")
-parser.add_argument("opfile", nargs="*", type=str,
-                    help="A list of text files specifying the custom observables in Pauli-sum form")
-parser.add_argument("-o", "--output_executable", type=str, required=True,
-                    help="name of the executable to be run")
-parser.add_argument("--CXX", type=str,
-                    help="The non-MPI CXX compiler to use.",
-                    default="g++")
-parser.add_argument("--MPICXX", type=str,
-                    help="The MPI CXX compiler to use. Defaults to non-MPI compilation.",
-                    default=None)
-
-parser.add_argument('-T', "--temperature", type=float, 
-                    help="simulation temperature")
-
-args = parser.parse_args()
-
-with open(args.paramfile) as pf:
-    param_data = dict(toml.load(pf))
-
-if hasattr(args, "temperature"):
-    # command line temperature override
-    param_data['beta'] = 1./args.temperature
-
-assert param_data['beta'] is not None
-
-work_dir = os.path.join(tmp_dir, args.output_executable)
-
-try:
-    os.mkdir(work_dir)
-except FileExistsError:
-    print("WARN: intermediates already generated with this name, overwriting")
-
-# Write the 'parameters.hpp' header file using the configuration
-with open(os.path.join(work_dir, "parameters.hpp"), 'w') as f:
-    f.write(f'// This file was generated automatically by \n//{__file__}\n')
-    for k in param_data:
-        if type(param_data[k]) is bool:
-            if not param_data[k]:
-                f.write("//")  # comment the line if not needed
-
-            f.write(f"#define {k}\n")
-        else:
-            f.write(f"#define {k} {param_data[k]}\n")
+# Ensure that `prepare` has been compiled
+PREP_EXEC_PATH = os.path.join(script_dir,"bin/prepare")
+if not os.path.isfile(PREP_EXEC_PATH):
+    print(f"No executable found at {PREP_EXEC_PATH}. Running `make`")
+    subprocess.run(["make", "-C", script_dir])
 
 
+class QMCsettings:
+    def __init__(self, paramdata):
+        """
+        Creates a sim-builder object with all necessary physical information.
+        @param tomlfile -> A TOML file containing all necessary data.
+        @param resource_path -> the path to hamiltonian.txt and any operator.txt files
 
+        """
+        self.numerical = dict(
+            Tsteps=1000000,      # number of MC initial equilibration updates
+            steps=10000000,              # number of MC updates
+            stepsPerMeasurement=10,       # number of MC updates per measurement
+            beta=1.0,                   # inverse temperature
 
-PREP_EXEC_PATH = os.path.join(work_dir, "prepare")
-preprocessor_compile = [args.CXX, "-O3", "-std=c++11", "-I", work_dir,
-                        "-o", PREP_EXEC_PATH, "prepare.cpp"]
+            qmax = 1000,                # upper bound for the maximal length of the sequence of permutation operators
+            Nbins =  250,                 # number of bins for the error estimation via binning analysis
+            EXHAUSTIVE_CYCLE_SEARCH = True      #  set to false for a more restrictive cycle search
+        )
 
-prep_command = [PREP_EXEC_PATH, args.hamfile]
-if hasattr(args, "opfile"):
-    prep_command += args.opfile
+        # 'True' indicates that this observavble will be measured.
+        self.std_observables = dict(
+            MEASURE_H=True,                     # <H>
+            MEASURE_H2=True,                   # <H^2>
+            MEASURE_HDIAG=True,                # <H_{diag}>
+            MEASURE_HDIAG2=True,               # <H_{diag}^2>
+            MEASURE_HOFFDIAG=True,             # <H_{offdiag}>
+            MEASURE_HOFFDIAG2=True,            # <H_{offdiag}^2>
+            MEASURE_Z_MAGNETIZATION=False      # Z-magnetization
+        )
 
-if args.MPICXX is None:
-    main_compile = [args.CXX, "-O3", "-std=c++11", "-o", args.output_executable,
-                "-I", work_dir, "PMRQMC.cpp"]
-else:
-    main_compile = [args.MPICXX, "-O3", "-o", args.output_executable,
-                "-I", work_dir, "PMRQMC_mpi.cpp"]
+        self.custom_observable_files = []
+        self.hamiltonian_file = None
 
+        self.load_parameters(paramdata)
 
-try:
+    def load_parameters(self, data):
+        for k in data:
+            if k in self.numerical:
+                assert type(self.numerical[k]) is type(data[k])
+                self.numerical[k] = data[k]
+            elif k in self.std_observables:
+                assert type(data[k]) is bool
+                self.std_observables[k] = data[k]
+            elif k == "observables_txt":
+                self.custom_observable_files.append(data[k])
+            elif k == "hamiltonian_txt":
+                self.hamiltonian_file = data[k]
+            else:
+                print(f"WARN: ignoring option {k} in passed params")
 
-    logfile_loc = f"tmp/compile_{DATE}.log"
+    def _write_parameters_hpp(self, dest_dir):
+        # Write the 'parameters.hpp' header file to dest_dir
+        with open(os.path.join(dest_dir, "parameters.hpp"), 'w') as f:
+            f.write('// This file was generated automatically by \n')
+            f.write(f'// {__file__}\n')
 
-    with open(logfile_loc, 'wb') as log:
+            for paramd in [self.numerical, self.std_observables]:
+                for k in paramd:
+                    if type(paramd[k]) is bool:
+                        if not paramd[k]:
+                            f.write("//")  # comment the line if not needed
+
+                        f.write(f"#define {k}\n")
+                    else:
+                        f.write(f"#define {k} {paramd[k]}\n")
+
+    def build(self, executable_path, CXX, build_dir='.'):
+        """
+        Compiles a simulation, named <executable_path>, using compiler CXX.
+        Intermediate data is stored in build_dir.
+        """
+        # write parameters.hpp to build_dir/parameters.hpp
+        self._write_parameters_hpp(build_dir)
+
+        logfile_loc = os.path.join(build_dir, f"compile_{DATE}.log")
+
+        prep_command = [PREP_EXEC_PATH, os.path.abspath(self.hamiltonian_file)]
+        prep_command += [os.path.abspath(of) for of in self.custom_observable_files]
+
+        main_compile = [CXX, "-O3", "-std=c++11",
+                        "-o", executable_path,
+                        "-I", build_dir, "-I", script_dir,
+                        os.path.join(script_dir, "PMRQMC.cpp")]
+
+        logfile = open(logfile_loc, 'wb')
 
         def logit(res):
-            log.write(b"STDOUT\n: ")
-            log.write(res.stdout)
+            logfile.write(b"STDOUT\n: ")
+            logfile.write(res.stdout)
             print(res.stdout.decode('utf8'))
-            log.write(b"STDERR\n: ")
-            log.write(res.stderr)
+            logfile.write(b"STDERR\n: ")
+            logfile.write(res.stderr)
 
-        log.write(b"XXX COMPILING PREPROCESSOR\n")
-        log.write(b"#"*80 + b"\n\n")
-        res = subprocess.run(preprocessor_compile, capture_output=True)
+        logfile.write(b"\nXXX PREPARING FILE\n")
+        logfile.write(b"#"*80 + b"\n")
+
+        # convert all hamiltonian and observable txt files to a header
+        # hamiltonian.hpp
+        print(prep_command)
+        res = subprocess.run(prep_command, capture_output=True, cwd=build_dir)
         logit(res)
-        res.check_returncode()
+        try:
+            res.check_returncode()
+        except subprocess.CalledProcessError as e:
+            print("Failed to prepare headers.\n")
+            print(f"Check the logs in {logfile_loc} for details.")
+            raise e
 
-        log.write(b"\nXXX PREPARING FILE\n")
-        log.write(b"#"*80 + b"\n")
-
-        res = subprocess.run(prep_command, capture_output=True)
-        logit(res)
-        res.check_returncode()
-
-        # move to the subdir to avoid confusion
-        os.rename("hamiltonian.hpp",
-                  os.path.join(work_dir, "hamiltonian.hpp"))
-
-        log.write(b"\nXXX COMPILING\n")
-        log.write(b"#"*80 + b"\n")
+        # compile
+        logfile.write(b"\nXXX COMPILING\n")
+        logfile.write(b"#"*80 + b"\n")
+        print(main_compile)
         res = subprocess.run(main_compile, capture_output=True)
         logit(res)
-        res.check_returncode()
+        try:
+            res.check_returncode()
+        except subprocess.CalledProcessError as e:
+            print("Failed to compile.\n")
+            print(f"Check the logs in {logfile_loc} for details.")
+            raise e
 
-        print("Success!")
+        logfile.close()
 
-except subprocess.CalledProcessError as e:
-    print(f"Failed. Check the logs in {logfile_loc} for details.")
-    raise e
+
+# behaviour if invoked as a script
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("paramfile", type=str,
+                        help="a TOML file specifying the numerical parameters")
+    parser.add_argument("--hamiltonian_txt", type=str,
+                        help="txt file specifying hamiltonian")
+    parser.add_argument("--operators_txt", type=str, nargs="*",
+                        help="txt files specifying operators")
+    parser.add_argument("-o", "--output_executable", type=str, required=True,
+                        help="path for the simulation executable")
+    parser.add_argument("--CXX", type=str,
+                        help="The (non-MPI) CXX compiler to use.",
+                        default="g++")
+
+    parser.add_argument('-T', "--temperature", type=float,
+                        help="simulation temperature")
+
+    parser.add_argument("--tmp_dir", type=str, default="build")
+
+    args = parser.parse_args()
+
+    try:
+        os.mkdir(args.tmp_dir)
+    except FileExistsError:
+        print(f"WARN: intermediates exist at {args.tmp_dir}, overwriting...")
+
+    with open(args.paramfile, 'r') as f:
+        params = toml.load(f)
+
+    if hasattr(args, 'temperature'):
+        params['beta'] = 1./args.temperature
+
+    settings = QMCsettings(params)
+    if args.hamiltonian_txt is not None:
+        if settings.hamiltonian_file is not None:
+            raise Exception("Hamiltonian file is specified twice, must use only toml or command line")
+        settings.hamiltonian_file = args.hamiltonian_txt
+    assert settings.hamiltonian_file is not None
+    
+    if args.operators_txt is not None:
+        for opfile in args.operators_txt:
+            settings.custom_observable_files.append(opfile)
+
+    settings.build(args.output_executable, args.CXX, args.tmp_dir)

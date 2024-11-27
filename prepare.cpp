@@ -385,6 +385,7 @@ bool Z_compare(vector<int> Z1 , vector<int> Z2){
     return true;
 }
 
+// data: pairs of weight complex<double> and Pauli strings (idx 1,2,3)
 PZdata PZcomp(const vector<pair<complex<double>,vector<int>>>& data) {
     PZdata PZ_data;
     int l = data.size(),z_count = 0;
@@ -397,7 +398,7 @@ PZdata PZcomp(const vector<pair<complex<double>,vector<int>>>& data) {
     for (int i = 0; i<l; i++){
         complex<double> coeff_i = data[i].first;
         vector<int> zs_i; // For every line zs extracts the qubits on which a pauli Z acts! 
-        vector<int> data_i = data[i].second; // Extracts the array of qubits and paulis for every line of input!
+        vector<int> data_i = data[i].second; // Extracts the Pauli string for every line of input!
         dbitset bit_num; // This variable keeps track of the index of the permutation matrix we get for each line of data!
 
         for (size_t j = 0; j < data_i.size() / 2; j++) {

@@ -43,3 +43,4 @@ Instructions for parallel computing with MPI (optional):
 
 -----------------------------------------------------------------------------------------------------------
 
+The Makefile compiles the 'prepare' utility. It is a very simple Makefile, and the speed of the executable is not important.
