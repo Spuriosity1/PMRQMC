@@ -11,7 +11,7 @@ script_dir = os.path.dirname(__file__)
 DATE = datetime.datetime.now().isoformat()
 
 # Ensure that `prepare` has been compiled
-PREP_EXEC_PATH = os.path.join(script_dir,"bin/prepare")
+PREP_EXEC_PATH = os.path.join(script_dir, "bin/prepare")
 if not os.path.isfile(PREP_EXEC_PATH):
     print(f"No executable found at {PREP_EXEC_PATH}. Running `make`")
     subprocess.run(["make", "-C", script_dir])
@@ -60,9 +60,9 @@ class QMCsettings:
             elif k in self.std_observables:
                 assert type(data[k]) is bool
                 self.std_observables[k] = data[k]
-            elif k == "observables_txt":
+            elif k == "observables":
                 self.custom_observable_files.append(data[k])
-            elif k == "hamiltonian_txt":
+            elif k == "hamiltonian":
                 self.hamiltonian_file = data[k]
             else:
                 print(f"WARN: ignoring option {k} in passed params")
@@ -146,9 +146,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("paramfile", type=str,
                         help="a TOML file specifying the numerical parameters")
-    parser.add_argument("--hamiltonian_txt", type=str,
+    parser.add_argument("-H", "--hamiltonian", type=str,
                         help="txt file specifying hamiltonian")
-    parser.add_argument("--operators_txt", type=str, nargs="*",
+    parser.add_argument("-O", "--observables", type=str, nargs="*",
                         help="txt files specifying operators")
     parser.add_argument("-o", "--output_executable", type=str, required=True,
                         help="path for the simulation executable")
@@ -171,17 +171,17 @@ if __name__ == "__main__":
     with open(args.paramfile, 'r') as f:
         params = toml.load(f)
 
-    if hasattr(args, 'temperature'):
+    if args.temperature is not None:
         params['beta'] = 1./args.temperature
 
     settings = QMCsettings(params)
-    if args.hamiltonian_txt is not None:
+    if args.hamiltonian is not None:
         if settings.hamiltonian_file is not None:
             raise Exception("Hamiltonian file is specified twice, must use only toml or command line")
-        settings.hamiltonian_file = args.hamiltonian_txt
+        settings.hamiltonian_file = args.hamiltonian
     assert settings.hamiltonian_file is not None
-    
-    if args.operators_txt is not None:
+
+    if args.observables is not None:
         for opfile in args.operators_txt:
             settings.custom_observable_files.append(opfile)
 
