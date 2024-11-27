@@ -5,7 +5,6 @@ import toml
 import os
 
 
-tmp_dir = "tmp"
 script_dir = os.path.dirname(__file__)
 
 DATE = datetime.datetime.now().isoformat()
@@ -83,7 +82,7 @@ class QMCsettings:
                     else:
                         f.write(f"#define {k} {paramd[k]}\n")
 
-    def build(self, executable_path, CXX, build_dir='.'):
+    def build(self, executable_name, CXX, build_dir='.'):
         """
         Compiles a simulation, named <executable_path>, using compiler CXX.
         Intermediate data is stored in build_dir.
@@ -93,12 +92,18 @@ class QMCsettings:
 
         logfile_loc = os.path.join(build_dir, f"compile_{DATE}.log")
 
+        loc_Ofiles = []
+        for file in self.custom_observable_files:
+            loc_Ofile = 'O'+os.path.basename(file)
+            subprocess.run(['cp', file, 
+                            os.path.join(build_dir, loc_Ofile)])
+            loc_Ofiles.append(loc_Ofile)
+
         prep_command = [PREP_EXEC_PATH, os.path.abspath(self.hamiltonian_file)]
-        prep_command += [os.path.abspath(of) for of in self.custom_observable_files]
+        prep_command += loc_Ofiles
 
         main_compile = [CXX, "-O3", "-std=c++11",
-                        "-o", executable_path,
-                        "-I", build_dir, "-I", script_dir,
+                        "-o", executable_name, "-I", script_dir, "-I", ".",
                         os.path.join(script_dir, "PMRQMC.cpp")]
 
         logfile = open(logfile_loc, 'wb')
@@ -129,7 +134,7 @@ class QMCsettings:
         logfile.write(b"\nXXX COMPILING\n")
         logfile.write(b"#"*80 + b"\n")
         print(main_compile)
-        res = subprocess.run(main_compile, capture_output=True)
+        res = subprocess.run(main_compile, capture_output=True, cwd=build_dir)
         logit(res)
         try:
             res.check_returncode()
@@ -182,7 +187,7 @@ if __name__ == "__main__":
     assert settings.hamiltonian_file is not None
 
     if args.observables is not None:
-        for opfile in args.operators_txt:
+        for opfile in args.observables:
             settings.custom_observable_files.append(opfile)
 
     settings.build(args.output_executable, args.CXX, args.tmp_dir)

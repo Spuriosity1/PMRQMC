@@ -258,15 +258,18 @@ vector<pair<complex<double>, vector<int>>> data_extract(const string& fileName){
         pair<complex<double>,vector<int>> linedata;
 
         // Extracting the complex coefficient:
-        double realpart, imagpart=0;
+       // double realpart, imagpart=0;
         char sign;
+        iss >> linedata.first;
+        /*
         string complexPart;
-        iss >> complexPart; 
+        iss >> complexPart;
         if(complexPart.length() == 0) continue; // empty lines, as well as lines containing nothing but spaces, are ignored
 
         istringstream complexIss(complexPart);
         complexIss >> realpart >> imagpart;
         linedata.first = complex<double> (realpart , imagpart);
+        */
 
 	if(linedata.first == 0.0) continue; // if the coefficient is equal to zero, the line is ignored
 
