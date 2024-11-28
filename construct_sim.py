@@ -103,7 +103,7 @@ class QMCsettings:
         prep_command += loc_Ofiles
 
         main_compile = [CXX, "-O3", "-std=c++11",
-                        "-o", executable_name, "-I", script_dir, "-I", ".",
+                        "-o", os.path.abspath(executable_name), "-I", script_dir, "-I", ".",
                         os.path.join(script_dir, "PMRQMC.cpp")]
 
         logfile = open(logfile_loc, 'wb')
